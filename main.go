@@ -1,10 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -15,46 +16,35 @@ type release struct {
 }
 
 func main() {
-
 	product := flag.String("product", "vault", "name of the product: vault, consul, boundary")
 	license := flag.String("license", "oss", "class of the license: oss, enterprise, hcp")
-
 	flag.Parse()
 
-	p := *product
-	l := *license
+	url := "https://api.releases.hashicorp.com/v1/releases/" + *product + "/latest?license_class=" + *license
 
-	url := "https://api.releases.hashicorp.com/v1/releases/" + p + "/latest?license_class=" + l
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	apiClient := http.Client{
-		Timeout: time.Second * 2, // Timeout after 2 seconds
-	}
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	res, getErr := apiClient.Do(req)
-	if getErr != nil {
-		log.Fatal(getErr)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if res.Body != nil {
-		defer res.Body.Close()
+	var rel release
+	if err := json.Unmarshal(body, &rel); err != nil {
+		log.Fatal(err)
 	}
 
-	body, readErr := ioutil.ReadAll(res.Body)
-	if readErr != nil {
-		log.Fatal(readErr)
-	}
-
-	release1 := release{}
-	jsonErr := json.Unmarshal(body, &release1)
-	if jsonErr != nil {
-		log.Fatal(jsonErr)
-	}
-
-	fmt.Println(release1.Version)
-
+	fmt.Println(rel.Version)
 }
